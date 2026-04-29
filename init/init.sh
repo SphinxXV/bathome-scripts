@@ -10,6 +10,9 @@ set -e
 USERNAME=$1
 HOSTNAME_VM=$2
 
+# Ajouter /usr/sbin au PATH (manquant sur Debian minimal)
+export PATH=$PATH:/usr/sbin:/sbin
+
 if [ -z "$USERNAME" ] || [ -z "$HOSTNAME_VM" ]; then
     echo "Usage: bash init.sh <USERNAME> <HOSTNAME>"
     exit 1
@@ -38,14 +41,14 @@ else
     adduser --disabled-password --gecos "" $USERNAME
     echo "  -> Utilisateur $USERNAME cree"
 fi
-usermod -aG sudo $USERNAME
+/usr/sbin/usermod -aG sudo $USERNAME
 echo "$USERNAME ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/$USERNAME
 chmod 0440 /etc/sudoers.d/$USERNAME
 
 # 5. Docker
 echo "[5/9] Installation de Docker..."
 curl -fsSL https://get.docker.com | sh
-usermod -aG docker $USERNAME
+/usr/sbin/usermod -aG docker $USERNAME
 systemctl enable docker
 systemctl start docker
 
