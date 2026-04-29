@@ -7,11 +7,12 @@
 
 set -e
 
+# IMPORTANT: Ajouter /usr/sbin et /sbin au PATH des le debut
+# Debian minimal n'inclut pas ces chemins par defaut
+export PATH=$PATH:/usr/sbin:/sbin:/usr/local/sbin
+
 USERNAME=$1
 HOSTNAME_VM=$2
-
-# Ajouter /usr/sbin au PATH (manquant sur Debian minimal)
-export PATH=$PATH:/usr/sbin:/sbin
 
 if [ -z "$USERNAME" ] || [ -z "$HOSTNAME_VM" ]; then
     echo "Usage: bash init.sh <USERNAME> <HOSTNAME>"
@@ -54,10 +55,10 @@ systemctl start docker
 
 # 6. Firewall UFW
 echo "[6/9] Configuration du firewall UFW..."
-ufw default deny incoming
-ufw default allow outgoing
-ufw allow ssh
-ufw --force enable
+/usr/sbin/ufw default deny incoming
+/usr/sbin/ufw default allow outgoing
+/usr/sbin/ufw allow ssh
+/usr/sbin/ufw --force enable
 
 # 7. fail2ban
 echo "[7/9] Configuration de fail2ban..."
