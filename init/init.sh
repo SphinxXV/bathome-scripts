@@ -22,8 +22,8 @@ echo "============================================================"
 echo "[1/9] Mise a jour du systeme..."
 apt update && apt upgrade -y
 
-# 2. Installation curl et sudo EN PREMIER (peuvent manquer sur Debian minimal)
-echo "[2/9] Installation de curl et sudo..."
+# 2. curl et sudo EN PREMIER - peuvent manquer sur Debian minimal
+echo "[2/9] Installation de curl et sudo (prioritaire)..."
 apt install -y curl sudo
 
 # 3. Outils de base
@@ -67,10 +67,8 @@ hostnamectl set-hostname $HOSTNAME_VM
 
 # 9. Securisation SSH
 echo "[9/9] Securisation SSH..."
-# Desactiver root SSH
 sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin no/' /etc/ssh/sshd_config
 sed -i 's/PermitRootLogin yes/PermitRootLogin no/' /etc/ssh/sshd_config
-# Activer authentification par mot de passe (decommenter la ligne si commentee)
 sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config
 sed -i 's/#PasswordAuthentication no/PasswordAuthentication yes/' /etc/ssh/sshd_config
 sed -i 's/PasswordAuthentication no/PasswordAuthentication yes/' /etc/ssh/sshd_config
