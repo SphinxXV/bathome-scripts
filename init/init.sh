@@ -1,15 +1,13 @@
 #!/bin/bash
 # ==============================================
 # B@tHome - Script d'initialisation des VMs
+# DOIT etre lance en ROOT
 # Usage: bash init.sh <USERNAME> <HOSTNAME>
-# Exemple: bash init.sh sysops cipher
 # ==============================================
 
-set -e
-
-# IMPORTANT: Ajouter /usr/sbin et /sbin au PATH des le debut
-# Debian minimal n'inclut pas ces chemins par defaut
-export PATH=$PATH:/usr/sbin:/sbin:/usr/local/sbin
+# Forcer /usr/sbin dans le PATH des le debut
+# Necessaire sur Debian minimal ou ces commandes sont absentes du PATH par defaut
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 USERNAME=$1
 HOSTNAME_VM=$2
@@ -19,74 +17,49 @@ if [ -z "$USERNAME" ] || [ -z "$HOSTNAME_VM" ]; then
     exit 1
 fi
 
-echo "B@tHome - Initialisation de $HOSTNAME_VM avec $USERNAME"
+echo "B@tHome - Initialisation de $HOSTNAME_VM"
 echo "============================================================"
 
-# 1. Mise a jour systeme
-echo "[1/9] Mise a jour du systeme..."
-apt update && apt upgrade -y
+# 1. Mise a jour + installation de tout en une seule commande apt
+echo "[1/6] Mise a jour et installation des outils..."
+apt-get update -y
+apt-get upgrade -y
+apt-get install -y curl sudo wget git ufw fail2ban net-tools htop nano
 
-# 2. curl et sudo EN PREMIER - peuvent manquer sur Debian minimal
-echo "[2/9] Installation de curl et sudo (prioritaire)..."
-apt install -y curl sudo
-
-# 3. Outils de base
-echo "[3/9] Installation des outils de base..."
-apt install -y wget git ufw fail2ban net-tools htop nano
-
-# 4. Creation de l'utilisateur
-echo "[4/9] Verification de l'utilisateur $USERNAME..."
-if id "$USERNAME" &>/dev/null; then
-    echo "  -> Utilisateur $USERNAME existe deja"
-else
-    adduser --disabled-password --gecos "" $USERNAME
-    echo "  -> Utilisateur $USERNAME cree"
-fi
-/usr/sbin/usermod -aG sudo $USERNAME
+# 2. Configurer sudo pour l'utilisateur
+echo "[2/6] Configuration de l'utilisateur $USERNAME..."
+usermod -aG sudo $USERNAME
 echo "$USERNAME ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/$USERNAME
 chmod 0440 /etc/sudoers.d/$USERNAME
 
-# 5. Docker
-echo "[5/9] Installation de Docker..."
+# 3. Docker
+echo "[3/6] Installation de Docker..."
 curl -fsSL https://get.docker.com | sh
-/usr/sbin/usermod -aG docker $USERNAME
+usermod -aG docker $USERNAME
 systemctl enable docker
 systemctl start docker
 
-# 6. Firewall UFW
-echo "[6/9] Configuration du firewall UFW..."
-/usr/sbin/ufw default deny incoming
-/usr/sbin/ufw default allow outgoing
-/usr/sbin/ufw allow ssh
-/usr/sbin/ufw --force enable
+# 4. Firewall UFW
+echo "[4/6] Configuration UFW..."
+ufw default deny incoming
+ufw default allow outgoing
+ufw allow 22/tcp
+ufw --force enable
 
-# 7. fail2ban
-echo "[7/9] Configuration de fail2ban..."
+# 5. fail2ban
+echo "[5/6] Configuration fail2ban..."
 systemctl enable fail2ban
 systemctl start fail2ban
 
-# 8. Hostname
-echo "[8/9] Configuration du hostname..."
+# 6. Hostname + SSH
+echo "[6/6] Hostname et SSH..."
 hostnamectl set-hostname $HOSTNAME_VM
-
-# 9. Securisation SSH
-echo "[9/9] Securisation SSH..."
-sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin no/' /etc/ssh/sshd_config
-sed -i 's/PermitRootLogin yes/PermitRootLogin no/' /etc/ssh/sshd_config
-sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config
-sed -i 's/#PasswordAuthentication no/PasswordAuthentication yes/' /etc/ssh/sshd_config
-sed -i 's/PasswordAuthentication no/PasswordAuthentication yes/' /etc/ssh/sshd_config
+sed -i 's/.*PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config
+sed -i 's/.*PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
 systemctl restart sshd
 
 echo ""
 echo "============================================================"
-echo "VM $HOSTNAME_VM initialisee avec succes !"
-echo "  Utilisateur : $USERNAME"
-echo "  Root SSH    : desactive"
-echo "  Auth mot de passe SSH : active"
-echo "  UFW         : actif"
-echo "  fail2ban    : actif"
-echo "  Docker      : installe"
+echo "VM $HOSTNAME_VM prete !"
+echo "  SSH : ssh $USERNAME@IP_VM"
 echo "============================================================"
-echo ""
-echo "Depuis ton Mac : ssh $USERNAME@IP_DE_LA_VM"
