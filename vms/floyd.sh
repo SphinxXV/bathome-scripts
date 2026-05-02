@@ -4,12 +4,13 @@
 # Utilisateur: aiops / Hostname: floyd
 # Services: Ollama + Open WebUI + LLaVA Vision
 # RAM: 8 Go minimum / Disque: 50 Go
-# LANCER EN ROOT depuis la console VMware
-# ou en SSH apres avoir fait : su -
+# NOTE: Ollama tourne en CPU-only sur VM Debian
+# sous VMware Fusion (pas d'acces GPU Apple M2)
+# C'est normal et fonctionnel, juste moins rapide
+# LANCER EN ROOT : su - puis bash floyd.sh
 # ==============================================
 
 # CORRECTION CRITIQUE : forcer le PATH complet
-# Necesaire sur Debian minimal sinon usermod etc introuvable
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 INIT_URL="https://raw.githubusercontent.com/SphinxXV/bathome-scripts/main/init/init.sh"
@@ -25,21 +26,30 @@ if [ "$(id -u)" -ne 0 ]; then
     exit 1
 fi
 
+# Installer curl en PREMIER (manquant sur Debian minimal)
+echo "Installation de curl..."
+apt-get update -y
+apt-get install -y curl
+
 # Init commun (installe Docker, UFW, sudo, fail2ban...)
 curl -fsSL $INIT_URL -o /tmp/init.sh && bash /tmp/init.sh aiops floyd
 rm -f /tmp/init.sh
 
-# Creer le dossier docker dans le home de aiops
+# Creer le dossier docker
 mkdir -p /home/aiops/docker/floyd
 cd /home/aiops/docker/floyd
 
-# Installer Ollama directement sur la VM (plus performant que Docker sur ARM)
+# Installer Ollama
 echo "Installation d'Ollama..."
 curl -fsSL https://ollama.com/install.sh | sh
 systemctl enable ollama
 systemctl start ollama
 
-# Attendre le demarrage d'Ollama
+# NOTE: Le message 'No NVIDIA/AMD GPU detected' est NORMAL
+# sur une VM Debian sous VMware Fusion sur Mac M2.
+# VMware ne donne pas acces au GPU Apple Silicon.
+# Ollama tourne en CPU-only - fonctionnel mais plus lent.
+
 echo "Attente du demarrage d'Ollama (20 secondes)..."
 sleep 20
 
@@ -70,9 +80,9 @@ services:
       - "host-gateway:host-gateway"
 EOF
 
-# Ouvrir les ports UFW
-/usr/sbin/ufw allow 3002/tcp   # Open WebUI
-/usr/sbin/ufw allow 11434/tcp  # Ollama API (pour Home Assistant)
+# Ouvrir les ports UFW avec chemin complet
+/usr/sbin/ufw allow 3002/tcp
+/usr/sbin/ufw allow 11434/tcp
 /usr/sbin/ufw reload
 
 # Lancer Open WebUI
@@ -89,7 +99,11 @@ echo " Modeles disponibles :"
 echo "   llama3.2:3b  -> taches texte (rapide)"
 echo "   llava:7b     -> analyse cameras"
 echo ""
-echo " Intégration Home Assistant :"
-echo "   Settings > Devices & Services > Add > Ollama"
+echo " NOTE: CPU-only sur VM VMware = normal !"
+echo " Le GPU Apple M2 n'est pas accessible"
+echo " depuis une VM Debian."
+echo ""
+echo " Integration Home Assistant :"
+echo "   Settings > Devices > Add > Ollama"
 echo "   URL: http://IP_FLOYD:11434"
 echo "========================================"
