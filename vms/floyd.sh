@@ -6,11 +6,9 @@
 # RAM: 8 Go minimum / Disque: 50 Go
 # NOTE: Ollama tourne en CPU-only sur VM Debian
 # sous VMware Fusion (pas d'acces GPU Apple M2)
-# C'est normal et fonctionnel, juste moins rapide
 # LANCER EN ROOT : su - puis bash floyd.sh
 # ==============================================
 
-# CORRECTION CRITIQUE : forcer le PATH complet
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 INIT_URL="https://raw.githubusercontent.com/SphinxXV/bathome-scripts/main/init/init.sh"
@@ -19,48 +17,50 @@ echo "========================================"
 echo " B@tHome - Floyd (IA Locale)"
 echo "========================================"
 
-# Verifier qu'on est bien root
 if [ "$(id -u)" -ne 0 ]; then
     echo "ERREUR: Ce script doit etre lance en root"
     echo "Faire d'abord : su -"
     exit 1
 fi
 
-# Installer curl en PREMIER (manquant sur Debian minimal)
+# Installer curl en PREMIER
 echo "Installation de curl..."
 apt-get update -y
 apt-get install -y curl
 
-# Init commun (installe Docker, UFW, sudo, fail2ban...)
+# Init commun
 curl -fsSL $INIT_URL -o /tmp/init.sh && bash /tmp/init.sh aiops floyd
 rm -f /tmp/init.sh
 
-# Creer le dossier docker
 mkdir -p /home/aiops/docker/floyd
 cd /home/aiops/docker/floyd
 
 # Installer Ollama
 echo "Installation d'Ollama..."
 curl -fsSL https://ollama.com/install.sh | sh
+
+# CRITIQUE: Configurer Ollama pour ecouter sur toutes les interfaces
+# Sans ca, Home Assistant ne peut pas atteindre l'API Ollama
+mkdir -p /etc/systemd/system/ollama.service.d
+cat > /etc/systemd/system/ollama.service.d/override.conf << 'EOF'
+[Service]
+Environment="OLLAMA_HOST=0.0.0.0:11434"
+EOF
+
+systemctl daemon-reload
 systemctl enable ollama
 systemctl start ollama
-
-# NOTE: Le message 'No NVIDIA/AMD GPU detected' est NORMAL
-# sur une VM Debian sous VMware Fusion sur Mac M2.
-# VMware ne donne pas acces au GPU Apple Silicon.
-# Ollama tourne en CPU-only - fonctionnel mais plus lent.
 
 echo "Attente du demarrage d'Ollama (20 secondes)..."
 sleep 20
 
-# Telecharger les modeles IA
-echo "Telechargement llama3.2:3b (modele texte leger)..."
+# Telecharger les modeles
+echo "Telechargement llama3.2:3b..."
 ollama pull llama3.2:3b
-
-echo "Telechargement llava:7b (modele vision cameras)..."
+echo "Telechargement llava:7b..."
 ollama pull llava:7b
 
-# Creer le docker-compose.yml pour Open WebUI
+# Docker Compose pour Open WebUI
 cat > docker-compose.yml << 'EOF'
 services:
   open-webui:
@@ -80,12 +80,10 @@ services:
       - "host-gateway:host-gateway"
 EOF
 
-# Ouvrir les ports UFW avec chemin complet
 /usr/sbin/ufw allow 3002/tcp
 /usr/sbin/ufw allow 11434/tcp
 /usr/sbin/ufw reload
 
-# Lancer Open WebUI
 docker compose up -d
 
 echo ""
@@ -95,13 +93,7 @@ echo ""
 echo " Open WebUI : http://$(hostname -I | awk '{print $1}'):3002"
 echo " Ollama API : http://$(hostname -I | awk '{print $1}'):11434"
 echo ""
-echo " Modeles disponibles :"
-echo "   llama3.2:3b  -> taches texte (rapide)"
-echo "   llava:7b     -> analyse cameras"
-echo ""
-echo " NOTE: CPU-only sur VM VMware = normal !"
-echo " Le GPU Apple M2 n'est pas accessible"
-echo " depuis une VM Debian."
+echo " Modeles : llama3.2:3b + llava:7b"
 echo ""
 echo " Integration Home Assistant :"
 echo "   Settings > Devices > Add > Ollama"
