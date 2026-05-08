@@ -1,55 +1,30 @@
 #!/bin/bash
-# ==============================================
-# B@tHome - Installer Node Exporter sur une VM existante
-# Usage: curl -fsSL https://raw.githubusercontent.com/SphinxXV/bathome-scripts/main/init/node_exporter.sh -o /tmp/ne.sh && sudo bash /tmp/ne.sh
-# Port: 9100
-# ==============================================
+# =============================================================
+# B@tHome — node_exporter.sh
+# Installation Node Exporter v1.8.1 ARM64
+# =============================================================
+
+set -e
 
 NE_VERSION="1.8.1"
+NE_ARCH="arm64"
+NE_URL="https://github.com/prometheus/node_exporter/releases/download/v${NE_VERSION}/node_exporter-${NE_VERSION}.linux-${NE_ARCH}.tar.gz"
 
-# Detecter l'architecture
-ARCH="arm64"
-if [ "$(uname -m)" = "x86_64" ]; then
-    ARCH="amd64"
-    elif [ "$(uname -m)" = "aarch64" ]; then
-        ARCH="arm64"
-        fi
+echo "==> Installation Node Exporter v${NE_VERSION}..."
 
-        echo "[Node Exporter] Installation v${NE_VERSION} (${ARCH})..."
+wget -q "$NE_URL" -O /tmp/ne.tar.gz
+tar -xzf /tmp/ne.tar.gz -C /tmp/
+cp /tmp/node_exporter-${NE_VERSION}.linux-${NE_ARCH}/node_exporter /usr/local/bin/
+chmod +x /usr/local/bin/node_exporter
+rm -rf /tmp/ne.tar.gz /tmp/node_exporter-${NE_VERSION}.linux-${NE_ARCH}
 
-        # Telecharger et installer le binaire
-        wget -q "https://github.com/prometheus/node_exporter/releases/download/v${NE_VERSION}/node_exporter-${NE_VERSION}.linux-${ARCH}.tar.gz" -O /tmp/node_exporter.tar.gz
-        tar -xzf /tmp/node_exporter.tar.gz -C /tmp/
-        cp "/tmp/node_exporter-${NE_VERSION}.linux-${ARCH}/node_exporter" /usr/local/bin/
-        chmod +x /usr/local/bin/node_exporter
-        rm -rf /tmp/node_exporter*
+printf '[Unit]\nDescription=Node Exporter\nAfter=network.target\n\n[Service]\nUser=root\nExecStart=/usr/local/bin/node_exporter\nRestart=always\n\n[Install]\nWantedBy=multi-user.target\n' > /etc/systemd/system/node_exporter.service
 
-        # Creer le service systemd (sans heredoc)
-        SERVICE_FILE="/etc/systemd/system/node_exporter.service"
-Fix node_exporter.sh - remove heredoc, use echo instead        echo "Description=Node Exporter - Metriques systeme pour Prometheus/Grafana" >> $SERVICE_FILE
-        echo "After=network.target" >> $SERVICE_FILE
-        echo "" >> $SERVICE_FILE
-        echo "[Service]" >> $SERVICE_FILE
-        echo "User=root" >> $SERVICE_FILE
-        echo "ExecStart=/usr/local/bin/node_exporter" >> $SERVICE_FILE
-        echo "Restart=always" >> $SERVICE_FILE
-        echo "RestartSec=3" >> $SERVICE_FILE
-        echo "" >> $SERVICE_FILE
-        echo "[Install]" >> $SERVICE_FILE
-        echo "WantedBy=multi-user.target" >> $SERVICE_FILE
+systemctl daemon-reload
+systemctl enable node_exporter
+systemctl start node_exporter
 
-        systemctl daemon-reload
-        systemctl enable node_exporter
-        systemctl start node_exporter
+ufw allow 9100/tcp comment 'Node Exporter'
+ufw reload
 
-        # Ouvrir le port UFW si disponible
-        if command -v ufw &>/dev/null; then
-            ufw allow 9100/tcp
-                ufw reload
-                fi
-
-                echo ""
-                echo "[Node Exporter] Installe et demarre !"
-                echo "[Node Exporter] Metriques : http://$(hostname -I | awk '{print $1}'):9100/metrics"
-                systemctl status node_exporter --no-pager
-                
+echo "==> Node Exporter installe et actif sur le port 9100"
