@@ -1,95 +1,100 @@
 #!/bin/bash
-# ==============================================
-# B@tHome - Script d'initialisation des VMs
-# DOIT etre lance en ROOT
-# Usage: bash init.sh <USERNAME> <HOSTNAME>
-# Installe: outils de base + Docker + Node Exporter
-# ==============================================
+# =============================================================
+# B@tHome — init.sh
+# Script de base commun a toutes les VMs Debian 13
+# Usage: bash init.sh <username> <hostname>
+# =============================================================
 
-export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+set -e
 
 USERNAME=$1
-HOSTNAME_VM=$2
+HOSTNAME=$2
 
-if [ -z "$USERNAME" ] || [ -z "$HOSTNAME_VM" ]; then
-    echo "Usage: bash init.sh <USERNAME> <HOSTNAME>"
-        exit 1
-        fi
+if [ -z "$USERNAME" ] || [ -z "$HOSTNAME" ]; then
+  echo "Usage: bash init.sh <username> <hostname>"
+    exit 1
+    fi
 
-        echo "B@tHome - Initialisation de $HOSTNAME_VM"
-        echo "============================================================"
+    echo "==> Configuration de base pour $HOSTNAME..."
 
-        # 1. Mise a jour + installation de tout en une seule commande apt
-        echo "[1/6] Mise a jour et installation des outils..."
-        apt-get update -y
-        apt-get upgrade -y
-        apt-get install -y \
-            curl wget git vim htop \
-                ca-certificates gnupg lsb-release \
-                    ufw sudo net-tools \
-                        apt-transport-https software-properties-common
+    # Hostname
+    hostnamectl set-hostname "$HOSTNAME"
+    echo "127.0.1.1 $HOSTNAME" >> /etc/hosts
 
-                        # 2. Configurer sudo pour l'utilisateur
-                        echo "[2/6] Creation utilisateur $USERNAME..."
-                        if ! id "$USERNAME" &>/dev/null; then
-                            useradd -m -s /bin/bash "$USERNAME"
-                                echo "$USERNAME ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers.d/$USERNAME
-                                    chmod 440 /etc/sudoers.d/$USERNAME
-                                    fi
+    # Mise a jour systeme
+    apt-get update -qq && apt-get upgrade -y -qq
 
-                                    # 3. Configurer hostname
-                                    echo "[3/6] Configuration hostname $HOSTNAME_VM..."
-                                    hostnamectl set-hostname "$HOSTNAME_VM"
-                                    echo "127.0.1.1 $HOSTNAME_VM" >> /etc/hosts
+    # Paquets essentiels - sudo et curl inclus des le depart
+    apt-get install -y -qq \
+      sudo \
+        curl \
+          wget \
+            git \
+              ufw \
+                fail2ban \
+                  unattended-upgrades \
+                    apt-listchanges \
+                      ca-certificates \
+                        gnupg \
+                          lsb-release \
+                            htop \
+                              vim \
+                                net-tools
 
-                                    # 4. Installer Docker
-                                    echo "[4/6] Installation Docker..."
-                                    if ! command -v docker &>/dev/null; then
-                                        curl -fsSL https://get.docker.com | bash
-                                            usermod -aG docker "$USERNAME"
-                                            fi
+                                # Creer utilisateur si inexistant
+                                if ! id "$USERNAME" &>/dev/null; then
+                                  useradd -m -s /bin/bash "$USERNAME"
+                                    echo "==> Utilisateur $USERNAME cree — definissez son mot de passe :"
+                                      passwd "$USERNAME"
+                                      fi
 
-                                            # 5. Configurer UFW
-                                            echo "[5/6] Configuration pare-feu UFW..."
-                                            ufw --force enable
-                                            ufw allow OpenSSH
-                                            ufw allow 9100/tcp  # Node Exporter
+                                      # Sudo sans mot de passe pour l'utilisateur
+                                      echo "$USERNAME ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/$USERNAME
+                                      chmod 440 /etc/sudoers.d/$USERNAME
 
-                                            # 6. Installer Node Exporter (metriques CPU/RAM/Disk pour Grafana)
-                                            echo "[6/6] Installation Node Exporter (metriques Grafana)..."
-                                            NE_VERSION="1.8.1"
-                                            wget -q https://github.com/prometheus/node_exporter/releases/download/v${NE_VERSION}/node_exporter-${NE_VERSION}.linux-arm64.tar.gz -O /tmp/node_exporter.tar.gz
-                                            tar -xzf /tmp/node_exporter.tar.gz -C /tmp/
-                                            cp /tmp/node_exporter-${NE_VERSION}.linux-arm64/node_exporter /usr/local/bin/
-                                            chmod +x /usr/local/bin/node_exporter
-                                            rm -rf /tmp/node_exporter*
+                                      # Docker
+                                      curl -fsSL https://get.docker.com | bash
+                                      usermod -aG docker "$USERNAME"
 
-                                            # Creer service systemd pour Node Exporter
-                                            cat > /etc/systemd/system/node_exporter.service << 'EOF'
-                                            [Unit]
-                                            Description=Node Exporter - Metriques systeme pour Prometheus/Grafana
-                                            After=network.target
+                                      # UFW — pare-feu
+                                      ufw default deny incoming
+                                      ufw default allow outgoing
+                                      ufw allow 22/tcp comment 'SSH'
+                                      ufw --force enable
 
-                                            [Service]
-                                            User=root
-                                            ExecStart=/usr/local/bin/node_exporter
-                                            Restart=always
-                                            RestartSec=3
+                                      # Fail2ban — protection SSH brute force
+                                      cat > /etc/fail2ban/jail.local << 'F2B'
+                                      [sshd]
+                                      enabled = true
+                                      port = 22
+                                      maxretry = 5
+                                      bantime = 3600
+                                      findtime = 600
+                                      F2B
+                                      systemctl enable fail2ban
+                                      systemctl restart fail2ban
 
-                                            [Install]
-                                            WantedBy=multi-user.target
-                                            EOF
+                                      # Mises a jour automatiques de securite
+                                      cat > /etc/apt/apt.conf.d/50unattended-upgrades << 'UPG'
+                                      Unattended-Upgrade::Allowed-Origins {
+                                        "${distro_id}:${distro_codename}-security";
+                                        };
+                                        Unattended-Upgrade::AutoFixInterruptedDpkg "true";
+                                        Unattended-Upgrade::Remove-Unused-Dependencies "true";
+                                        Unattended-Upgrade::Automatic-Reboot "false";
+                                        UPG
 
-                                            systemctl daemon-reload
-                                            systemctl enable node_exporter
-                                            systemctl start node_exporter
+                                        # SSH — durcissement
+                                        sed -i 's/#PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config
+                                        sed -i 's/#PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
+                                        sed -i 's/#MaxAuthTries.*/MaxAuthTries 3/' /etc/ssh/sshd_config
+                                        systemctl restart sshd
 
-                                            echo ""
-                                            echo "============================================================"
-                                            echo " $HOSTNAME_VM initialise avec succes !"
-                                            echo ""
-                                            echo " Utilisateur : $USERNAME"
-                                            echo " Docker      : $(docker --version)"
-                                            echo " Node Exporter : http://$(hostname -I | awk '{print $1}'):9100/metrics"
-                                            echo "============================================================"
-                                            
+                                        # Node Exporter
+                                        bash <(curl -fsSL https://raw.githubusercontent.com/SphinxXV/bathome-scripts/main/init/node_exporter.sh)
+
+                                        echo ""
+                                        echo "==> Init terminee pour $HOSTNAME !"
+                                        echo "    Utilisateur : $USERNAME"
+                                        echo "    Node Exporter : http://$(hostname -I | awk '{print $1}'):9100/metrics"
+                                        echo "    Attention : root SSH desactive — utilisez $USERNAME"
